@@ -3,32 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Rally Master v2.2 - Camera Edition</title>
+    <title>Rally Master v2.2 - Scrollable</title>
     <style>
         :root {
             --bg: #0a0a0a; --card: #1a1a1a; --accent: #00e676;
             --ready: #2979ff; --error: #ff5252; --text: #ffffff;
         }
+        /* Allow the body to scroll */
         body {
             font-family: 'Segoe UI', sans-serif; background-color: var(--bg);
             color: var(--text); margin: 0; display: flex; flex-direction: column;
-            height: 100vh; overflow: hidden; text-transform: uppercase;
+            min-height: 100vh; overflow-y: auto; text-transform: uppercase;
         }
         body.ready { background-color: #001d3d; }
         body.recording { background-color: #4a0000; }
         
-        /* Camera Preview Style */
+        /* Keep header fixed at the top */
+        .header { 
+            background: #000; padding: 10px; border-bottom: 2px solid #333; 
+            text-align: center; font-weight: 900; position: sticky; top: 0; z-index: 100;
+        }
+
         #camera-container {
-            width: 100%;
-            height: 200px;
-            background: #000;
-            display: none; /* Hidden until activated */
-            position: relative;
-            border-bottom: 2px solid var(--accent);
+            width: 100%; height: 200px; background: #000;
+            display: none; position: relative; border-bottom: 2px solid var(--accent);
         }
         video { width: 100%; height: 100%; object-fit: cover; }
 
-        .header { background: #000; padding: 10px; border-bottom: 2px solid #333; text-align: center; font-weight: 900; }
         #gps-bar { 
             background: #000; padding: 5px 15px; display: flex; 
             justify-content: space-between; font-size: 0.65rem; color: #888;
@@ -45,12 +46,18 @@
         }
         .label { font-size: 0.6rem; color: #888; margin-bottom: 4px; }
         .value { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
-        .history-section { flex: 1; margin: 10px; background: #111; border-radius: 8px; overflow-y: auto; border: 1px solid #222; }
+        
+        /* History section now has a fixed height so it doesn't grow infinitely */
+        .history-section { 
+            margin: 10px; background: #111; border-radius: 8px; 
+            max-height: 200px; overflow-y: auto; border: 1px solid #222; 
+        }
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
         th { text-align: left; padding: 10px; color: #666; border-bottom: 1px solid #222; }
         td { padding: 10px; border-bottom: 1px solid #222; }
-        .controls { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { border: none; border-radius: 5px; font-weight: bold; padding: 14px; color: white; cursor: pointer; text-transform: uppercase; }
+        
+        .controls { padding: 10px 10px 30px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { border: none; border-radius: 5px; font-weight: bold; padding: 16px; color: white; cursor: pointer; text-transform: uppercase; }
         .btn-full { grid-column: span 2; }
         .btn-acc { background: var(--accent); }
         .btn-blue { background: var(--ready); }
@@ -99,46 +106,34 @@
 </div>
 
 <script>
+    // ... [Rest of the logic from previous turn stays the same] ...
+    // Note: I'm keeping your existing variables and functions (toggleCamera, runLogic, etc.)
+    
     let config = { start: JSON.parse(localStorage.getItem('r_start')), finish: JSON.parse(localStorage.getItem('r_finish')), radius: 60, minSpeed: 15 };
     let state = 'IDLE', stageStartTime = null, lastGpsTime = Date.now(), soundEnabled = false;
     let history = JSON.parse(localStorage.getItem('r_history')) || [], audioCtx = null;
-    
-    // Camera Variables
     let videoStream = null;
 
-    // --- CAMERA FUNCTIONS ---
     async function toggleCamera() {
-        if (videoStream) {
-            stopCamera();
-        } else {
-            await startCamera();
-        }
+        if (videoStream) { stopCamera(); } else { await startCamera(); }
     }
 
     async function startCamera() {
         const video = document.getElementById('video-preview');
         const container = document.getElementById('camera-container');
         const btn = document.getElementById('cam-toggle-btn');
-
         try {
-            // Requesting back camera specifically
-            videoStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: { exact: "environment" } }, 
-                audio: false 
-            });
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } }, audio: false });
             video.srcObject = videoStream;
             container.style.display = 'block';
             btn.innerText = "DISABLE PHONE CAMERA";
             btn.style.background = "var(--error)";
         } catch (err) {
-            // Fallback for desktop or devices with only one camera
             try {
                 videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = videoStream;
                 container.style.display = 'block';
-            } catch (e) {
-                alert("Camera Error: " + e.message);
-            }
+            } catch (e) { alert("Camera Error: " + e.message); }
         }
     }
 
@@ -152,8 +147,6 @@
             btn.style.background = "var(--accent)";
         }
     }
-
-    // --- EXISTING LOGIC UPDATED ---
 
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
@@ -172,53 +165,38 @@
         }, null, { enableHighAccuracy: true });
     }
 
-    // Logic updated to auto-start/stop camera
     function runLogic(dS, dF, kmh) {
         const h = document.getElementById('status-header');
         const l = document.getElementById('state-label');
-        
         if (state === 'IDLE' && dS < config.radius) {
-            state = 'READY'; 
-            document.body.className = 'ready'; 
-            h.innerText = "READY FOR LAUNCH"; 
-            l.innerText = "AT START";
-            startCamera(); // Auto-prep camera
+            state = 'READY'; document.body.className = 'ready'; h.innerText = "READY FOR LAUNCH"; l.innerText = "AT START";
+            startCamera();
         }
-        
         if (state === 'READY' && kmh > config.minSpeed) {
-            state = 'ACTIVE'; 
-            stageStartTime = Date.now(); 
-            document.body.className = 'recording';
-            h.innerText = "STAGE ACTIVE"; 
-            l.innerText = "RACING"; 
-            playBeep(1200, 0.3);
+            state = 'ACTIVE'; stageStartTime = Date.now(); document.body.className = 'recording';
+            h.innerText = "STAGE ACTIVE"; l.innerText = "RACING"; playBeep(1200, 0.3);
         }
-        
         if (state === 'ACTIVE' && dF < config.radius) {
             state = 'COOLDOWN';
             setTimeout(() => {
                 const duration = Date.now() - stageStartTime - 5000;
-                saveResult(duration); 
-                stopCamera(); // Auto-stop camera after finish
-                autoIncrement();
-                state = 'IDLE'; 
-                document.body.className = ''; 
-                h.innerText = "FINISH CLEAR"; 
-                l.innerText = "FINISHED";
+                saveResult(duration); stopCamera(); autoIncrement();
+                state = 'IDLE'; document.body.className = ''; h.innerText = "FINISH CLEAR"; l.innerText = "FINISHED";
                 playBeep(600, 0.5);
             }, 5000);
         }
     }
 
-    // GPS/UI Utils remain the same
     function saveResult(ms) {
         const name = document.getElementById('stage-name').value;
         history.unshift({ name, duration: (ms/1000).toFixed(2), time: new Date().toLocaleTimeString() });
         localStorage.setItem('r_history', JSON.stringify(history)); renderHistory();
     }
+
     function autoIncrement() {
         document.getElementById('stage-name').value = document.getElementById('stage-name').value.replace(/\d+/, n => parseInt(n) + 1);
     }
+
     function capturePoint(type) {
         navigator.geolocation.getCurrentPosition(pos => {
             config[type] = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -226,27 +204,33 @@
             alert(`${type} point captured!`);
         });
     }
+
     function updateGpsUI(acc) {
         const el = document.getElementById('gps-acc');
         el.innerHTML = `GPS: <span style="color:${acc < 15 ? 'var(--accent)' : 'orange'}">${Math.round(acc)}M</span>`;
     }
+
     setInterval(() => {
         const elapsed = (Date.now() - lastGpsTime) / 1000;
         document.getElementById('gps-timer').innerText = `SIGNAL: ${elapsed.toFixed(1)}s`;
         document.getElementById('gps-bar').classList.toggle('gps-stale', elapsed > 2);
     }, 500);
+
     function calcDist(lat1, lon1, lat2, lon2) {
         const R = 6371e3, p1 = lat1 * Math.PI/180, p2 = lat2 * Math.PI/180, dp = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
         const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
         return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
     }
+
     function renderHistory() {
         document.getElementById('history-body').innerHTML = history.map(h => `<tr><td><b>${h.name}</b><br><small>${h.time}</small></td><td style="color:var(--accent);">${h.duration}s</td><td>REC</td></tr>`).join('');
     }
+
     async function shareHistory() {
         let txt = "🏁 RALLY LOG 🏁\n" + history.map(h => `${h.name}: ${h.duration}s`).join('\n');
         if (navigator.share) await navigator.share({ text: txt }); else alert("Copied to clipboard!");
     }
+
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         soundEnabled = !soundEnabled;
@@ -254,6 +238,7 @@
         btn.innerText = soundEnabled ? "🔊 AUDIO ALERTS: ON" : "🔈 AUDIO ALERTS: OFF";
         btn.style.background = soundEnabled ? "var(--ready)" : "#444";
     }
+
     function playBeep(freq, dur) {
         if (!soundEnabled || !audioCtx) return;
         const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();

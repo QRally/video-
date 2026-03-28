@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rally Master v2.2</title>
+    <style>
+        :root {
+            --bg: #0a0a0a; --card: #1a1a1a; --accent: #00e676;
+            --ready: #2979ff; --error: #ff5252; --text: #ffffff;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif; background-color: var(--bg);
+            color: var(--text); margin: 0; display: flex; flex-direction: column;
+            height: 100vh; overflow: hidden; text-transform: uppercase;
+        }
+        body.ready { background-color: #001d3d; }
+        body.recording { background-color: #4a0000; }
+        .header { background: #000; padding: 10px; border-bottom: 2px solid #333; text-align: center; font-weight: 900; }
+        #gps-bar { 
+            background: #000; padding: 5px 15px; display: flex; 
+            justify-content: space-between; font-size: 0.65rem; color: #888;
+        }
+        #stage-input-container { padding: 10px; display: flex; gap: 5px; }
+        #stage-name { 
+            flex: 1; padding: 12px; background: #000; border: 1px solid #444; 
+            color: var(--accent); font-weight: 800; border-radius: 5px; font-size: 1.1rem;
+        }
+        .telemetry { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+        .stat-card { 
+            background: var(--card); border-radius: 8px; padding: 12px; 
+            display: flex; flex-direction: column; align-items: center; 
+        }
+        .label { font-size: 0.6rem; color: #888; margin-bottom: 4px; }
+        .value { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+        .history-section { flex: 1; margin: 10px; background: #111; border-radius: 8px; overflow-y: auto; border: 1px solid #222; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th { text-align: left; padding: 10px; color: #666; border-bottom: 1px solid #222; }
+        td { padding: 10px; border-bottom: 1px solid #222; }
+        .controls { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { border: none; border-radius: 5px; font-weight: bold; padding: 14px; color: white; cursor: pointer; text-transform: uppercase; }
+        .btn-full { grid-column: span 2; }
+        .btn-acc { background: var(--accent); }
+        .btn-blue { background: var(--ready); }
+        .btn-red { background: var(--error); }
+        .gps-stale { background-color: var(--error) !important; color: white !important; }
+    </style>
+</head>
+<body>
+
+<div class="header" id="status-header">SYSTEM IDLE</div>
+
+<div id="gps-bar">
+    <span id="gps-acc">GPS: WAITING...</span>
+    <span id="batt-status">BATT: --%</span>
+    <span id="gps-timer">SIGNAL: --s</span>
+</div>
+
+<div id="stage-input-container">
+    <input type="text" id="stage-name" value="SS1">
+</div>
+
+<div class="telemetry">
+    <div class="stat-card"><span class="label">KM/H</span><span class="value" id="speed">0</span></div>
+    <div class="stat-card"><span class="label">STATE</span><span id="state-label" style="font-weight: 800; font-size: 0.9rem; margin-top: 10px;">IDLE</span></div>
+    <div class="stat-card"><span class="label">TO START (M)</span><span class="value" id="dist-start" style="font-size: 1.5rem;">---</span></div>
+    <div class="stat-card"><span class="label">TO FINISH (M)</span><span class="value" id="dist-finish" style="font-size: 1.5rem;">---</span></div>
+</div>
+
+<div class="history-section">
+    <table>
+        <thead><tr><th>STAGE</th><th>TIME</th><th>LOG</th></tr></thead>
+        <tbody id="history-body"></tbody>
+    </table>
+</div>
+
+<div class="controls">
+    <button id="audio-btn" class="btn-full" style="background: #444;" onclick="initAudio()">🔈 ENABLE AUDIO ALERTS</button>
+    <button class="btn-full btn-acc" onclick="connectGoPro()">1. CONNECT GOPRO</button>
+    <button class="btn-blue" onclick="capturePoint('start')">RECCE START</button>
+    <button class="btn-red" onclick="capturePoint('finish')">RECCE FINISH</button>
+    <button class="btn-full" style="background: #333;" onclick="shareHistory()">SHARE RESULTS</button>
+</div>
+
+<script>
+    let config = { start: JSON.parse(localStorage.getItem('r_start')), finish: JSON.parse(localStorage.getItem('r_finish')), radius: 60, minSpeed: 15 };
+    let state = 'IDLE', stageStartTime = null, lastGpsTime = Date.now(), soundEnabled = false;
+    let history = JSON.parse(localStorage.getItem('r_history')) || [], audioCtx = null;
+
+    // GPS & BATTERY WATCHERS
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+            lastGpsTime = Date.now();
+            const { latitude, longitude, speed, accuracy } = pos.coords;
+            const kmh = Math.round((speed || 0) * 3.6);
+            document.getElementById('speed').innerText = kmh;
+            updateGpsUI(accuracy);
+            if (config.start && config.finish) {
+                const dS = calcDist(latitude, longitude, config.start.lat, config.start.lon);
+                const dF = calcDist(latitude, longitude, config.finish.lat, config.finish.lon);
+                document.getElementById('dist-start').innerText = Math.round(dS);
+                document.getElementById('dist-finish').innerText = Math.round(dF);
+                runLogic(dS, dF, kmh);
+            }
+        }, null, { enableHighAccuracy: true });
+    }
+
+    if (navigator.getBattery) {
+        navigator.getBattery().then(batt => {
+            const updateBatt = () => {
+                const level = Math.round(batt.level * 100);
+                document.getElementById('batt-status').innerText = `BATT: ${level}%`;
+                if (level < 20 && !batt.charging) playBeep(440, 0.5); // Warning beep
+            };
+            batt.onlevelchange = updateBatt; updateBatt();
+        });
+    }
+
+    // AUDIO ENGINE
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        soundEnabled = !soundEnabled;
+        const btn = document.getElementById('audio-btn');
+        btn.innerText = soundEnabled ? "🔊 AUDIO ALERTS: ON" : "🔈 AUDIO ALERTS: OFF";
+        btn.style.background = soundEnabled ? "var(--ready)" : "#444";
+        if(soundEnabled) playBeep(880, 0.1);
+    }
+
+    function playBeep(freq, dur) {
+        if (!soundEnabled || !audioCtx) return;
+        const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.value = freq; g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+        osc.start(); osc.stop(audioCtx.currentTime + dur);
+    }
+
+    // STAGE LOGIC
+    function runLogic(dS, dF, kmh) {
+        const h = document.getElementById('status-header');
+        const l = document.getElementById('state-label');
+        if (state === 'IDLE' && dS < config.radius) {
+            state = 'READY'; document.body.className = 'ready'; h.innerText = "READY FOR LAUNCH"; l.innerText = "AT START";
+        }
+        if (state === 'READY' && kmh > config.minSpeed) {
+            state = 'ACTIVE'; stageStartTime = Date.now(); document.body.className = 'recording';
+            h.innerText = "STAGE ACTIVE"; l.innerText = "RACING"; triggerGoPro(true); playBeep(1200, 0.3);
+        }
+        if (state === 'ACTIVE' && dF < config.radius) {
+            state = 'COOLDOWN';
+            setTimeout(() => {
+                const duration = Date.now() - stageStartTime - 5000;
+                saveResult(duration); triggerGoPro(false); autoIncrement();
+                state = 'IDLE'; document.body.className = ''; h.innerText = "FINISH CLEAR"; l.innerText = "FINISHED";
+                playBeep(600, 0.5);
+            }, 5000);
+        }
+    }
+
+    // UTILS
+    function saveResult(ms) {
+        const name = document.getElementById('stage-name').value;
+        history.unshift({ name, duration: (ms/1000).toFixed(2), time: new Date().toLocaleTimeString() });
+        localStorage.setItem('r_history', JSON.stringify(history)); renderHistory();
+    }
+    function autoIncrement() {
+        document.getElementById('stage-name').value = document.getElementById('stage-name').value.replace(/\d+/, n => parseInt(n) + 1);
+    }
+    function capturePoint(type) {
+        navigator.geolocation.getCurrentPosition(pos => {
+            config[type] = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            localStorage.setItem(`r_${type}`, JSON.stringify(config[type]));
+            alert(`${type} point captured!`);
+        });
+    }
+    function updateGpsUI(acc) {
+        const el = document.getElementById('gps-acc');
+        el.innerHTML = `GPS: <span style="color:${acc < 15 ? 'var(--accent)' : 'orange'}">${Math.round(acc)}M</span>`;
+    }
+    setInterval(() => {
+        const elapsed = (Date.now() - lastGpsTime) / 1000;
+        document.getElementById('gps-timer').innerText = `SIGNAL: ${elapsed.toFixed(1)}s`;
+        document.getElementById('gps-bar').classList.toggle('gps-stale', elapsed > 2);
+        if (elapsed > 3 && Math.floor(elapsed) % 4 === 0) playBeep(300, 0.2); // Signal Loss Alert
+    }, 500);
+    function calcDist(lat1, lon1, lat2, lon2) {
+        const R = 6371e3, p1 = lat1 * Math.PI/180, p2 = lat2 * Math.PI/180, dp = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+    function renderHistory() {
+        document.getElementById('history-body').innerHTML = history.map(h => `<tr><td><b>${h.name}</b><br><small>${h.time}</small></td><td style="color:var(--accent);">${h.duration}s</td><td>REC</td></tr>`).join('');
+    }
+    async function shareHistory() {
+        let txt = "🏁 RALLY LOG 🏁\n" + history.map(h => `${h.name}: ${h.duration}s`).join('\n');
+        if (navigator.share) await navigator.share({ text: txt }); else alert("Copied to clipboard!");
+    }
+    async function connectGoPro() {
+        try { await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'GoPro' }], optionalServices: ['0000fea6-0000-1000-8000-00805f9b34fb'] }); alert("GoPro Connected!"); }
+        catch(e) { alert("Use HTTPS"); }
+    }
+    function triggerGoPro(on) { console.log(on ? "START" : "STOP"); }
+    renderHistory();
+    if ('wakeLock' in navigator) navigator.wakeLock.request('screen');
+</script>
+</body>
+</html>

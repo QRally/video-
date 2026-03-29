@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Rally Master v2.6 - Directional</title>
+    <title>Rally Master v2.7 - Stage Library</title>
     <style>
         :root {
             --bg: #0a0a0a; --card: #1a1a1a; --accent: #00e676;
@@ -24,19 +24,29 @@
         #camera-container { width: 100%; height: 200px; background: #000; display: none; border-bottom: 2px solid var(--accent); }
         video { width: 100%; height: 100%; object-fit: cover; }
 
-        .section-title { padding: 10px 15px; font-size: 0.7rem; color: #666; background: #111; border-bottom: 1px solid #222; }
+        .section-title { padding: 10px 15px; font-size: 0.7rem; color: #666; background: #111; border-bottom: 1px solid #222; display: flex; justify-content: space-between; }
         
-        .coord-entry { padding: 10px; background: #151515; display: flex; flex-direction: column; gap: 8px; }
-        .coord-input-group { display: flex; flex-direction: column; gap: 4px; }
-        .coord-input-group label { font-size: 0.6rem; color: var(--accent); margin-left: 2px; }
-        .coord-entry input { 
-            background: #000; border: 1px solid #333; color: #fff; padding: 12px; 
-            border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box;
+        .coord-entry { padding: 10px; background: #151515; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #333; }
+        input { 
+            background: #000; border: 1px solid #333; color: #fff; padding: 10px; 
+            border-radius: 4px; font-size: 0.8rem; width: 100%; box-sizing: border-box;
         }
+
+        /* Stage List Styling */
+        #stage-list { padding: 10px; display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; background: #000; }
+        .stage-item { 
+            background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #333;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .stage-info { flex-grow: 1; font-size: 0.75rem; }
+        .stage-actions { display: flex; gap: 5px; }
+        .btn-sm { padding: 6px 10px; font-size: 0.65rem; border-radius: 3px; }
 
         #gps-bar { background: #000; padding: 5px 15px; display: flex; justify-content: space-between; font-size: 0.65rem; color: #888; }
         .telemetry { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
-        .stat-card { background: var(--card); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; }
+        .stat-card { background: var(--card); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; border: 1px solid #222; }
+        .active-stage-banner { background: var(--ready); color: #fff; font-size: 0.6rem; padding: 2px 10px; text-align: center; font-weight: bold; }
+        
         .value { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
         .label { font-size: 0.6rem; color: #888; }
 
@@ -47,14 +57,12 @@
         .controls { padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { border: none; border-radius: 5px; font-weight: bold; padding: 16px; color: white; cursor: pointer; text-transform: uppercase; }
         .btn-full { grid-column: span 2; }
-        .btn-acc { background: var(--accent); }
-        .btn-audio-off { background: #444; }
-        .btn-audio-on { background: #ff9800; border: 2px solid #fff; }
     </style>
 </head>
 <body>
 
 <div class="header" id="status-header">SYSTEM IDLE</div>
+<div class="active-stage-banner" id="current-stage-name">NO STAGE LOADED</div>
 
 <div id="camera-container"><video id="video-preview" autoplay playsinline muted></video></div>
 
@@ -63,107 +71,117 @@
     <span id="gps-timer">SIGNAL: --s</span>
 </div>
 
-<div class="section-title">Manual Geo-Entry</div>
+<div class="section-title"><span>ADD NEW STAGE</span></div>
 <div class="coord-entry">
-    <div class="coord-input-group">
-        <label>START LINE (PASTE FROM MAPS)</label>
-        <input type="text" id="geo-start" placeholder="Lat, Lon" oninput="parseGeo('start')">
-    </div>
-    <div class="coord-input-group">
-        <label>FINISH LINE (PASTE FROM MAPS)</label>
-        <input type="text" id="geo-finish" placeholder="Lat, Lon" oninput="parseGeo('finish')">
-    </div>
-    <button id="save-btn" class="btn-full" style="background:#222; font-size:0.7rem; margin-top:5px;" onclick="saveConfig()">💾 OVERWRITE & SAVE CONFIG</button>
+    <input type="text" id="new-name" placeholder="Stage Name (e.g. Forest Run)">
+    <input type="text" id="new-start" placeholder="Start Lat, Lon">
+    <input type="text" id="new-finish" placeholder="Finish Lat, Lon">
+    <button class="btn-full" style="background:var(--accent); color:#000;" onclick="addStage()">➕ SAVE TO LIBRARY</button>
 </div>
+
+<div class="section-title"><span>STAGE LIBRARY</span></div>
+<div id="stage-list"></div>
 
 <div class="telemetry">
     <div class="stat-card"><span class="label">KM/H</span><span class="value" id="speed">0</span></div>
-    <div class="stat-card"><span class="label">NEXT: START (M)</span><span class="value" id="dist-label">--</span></div>
+    <div class="stat-card"><span class="label" id="dist-type">DIST (M)</span><span class="value" id="dist-label">--</span></div>
 </div>
 
-<div class="section-title">Video Gallery</div>
-<div id="video-gallery" class="gallery"><div style="color:#444; text-align:center; font-size:0.8rem;">No clips saved yet</div></div>
+<div class="section-title">VIDEO GALLERY</div>
+<div id="video-gallery" class="gallery"></div>
 
 <div class="controls">
-    <button id="cam-toggle-btn" class="btn-full btn-acc" onclick="toggleCamera()">1. ENABLE PHONE CAMERA</button>
-    <button id="audio-btn" class="btn-audio-off" onclick="initAudio()">🔈 AUDIO: OFF</button>
-    <button style="background: #673ab7;" onclick="playBeep(880, 0.4)">🎵 TEST BEEP</button>
+    <button id="cam-toggle-btn" class="btn-full" style="background:#333;" onclick="toggleCamera()">📷 TOGGLE CAMERA</button>
+    <button id="audio-btn" style="background:#444;" onclick="initAudio()">🔈 AUDIO</button>
+    <button style="background: #673ab7;" onclick="playBeep(880, 0.4)">🎵 TEST</button>
 </div>
 
 <script>
-    let config = { 
-        start: JSON.parse(localStorage.getItem('r_start')), 
-        finish: JSON.parse(localStorage.getItem('r_finish')), 
-        radius: 60, minSpeed: 15 
-    };
-    
+    let stages = JSON.parse(localStorage.getItem('rally_stages')) || [];
+    let activeConfig = null;
     let state = 'IDLE', lastGpsTime = Date.now(), soundEnabled = false, audioCtx = null;
     let videoStream = null, mediaRecorder = null, recordedChunks = [];
 
-    if(config.start) document.getElementById('geo-start').value = `${config.start.lat}, ${config.start.lon}`;
-    if(config.finish) document.getElementById('geo-finish').value = `${config.finish.lat}, ${config.finish.lon}`;
+    renderStages();
 
-    function parseGeo(type) {
-        const val = document.getElementById(`geo-${type}`).value;
-        const parts = val.split(',').map(p => p.trim());
-        if(parts.length === 2) {
-            const lat = parseFloat(parts[0]); const lon = parseFloat(parts[1]);
-            if(!isNaN(lat) && !isNaN(lon)) config[type] = { lat, lon };
-        }
+    // --- STAGE LIBRARY LOGIC ---
+    function addStage() {
+        const name = document.getElementById('new-name').value;
+        const startStr = document.getElementById('new-start').value;
+        const finishStr = document.getElementById('new-finish').value;
+
+        if(!name || !startStr || !finishStr) return alert("Fill all fields");
+
+        const startArr = startStr.split(',').map(p => parseFloat(p.trim()));
+        const finishArr = finishStr.split(',').map(p => parseFloat(p.trim()));
+
+        const newStage = {
+            id: Date.now(),
+            name: name,
+            start: { lat: startArr[0], lon: startArr[1] },
+            finish: { lat: finishArr[0], lon: finishArr[1] }
+        };
+
+        stages.push(newStage);
+        localStorage.setItem('rally_stages', JSON.stringify(stages));
+        renderStages();
+        
+        // Clear inputs
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-start').value = '';
+        document.getElementById('new-finish').value = '';
     }
 
-    function saveConfig() {
-        if(config.start && config.finish) {
-            localStorage.setItem('r_start', JSON.stringify(config.start));
-            localStorage.setItem('r_finish', JSON.stringify(config.finish));
-            const btn = document.getElementById('save-btn');
-            btn.innerText = "✅ CONFIG UPDATED"; btn.style.background = "#00e676";
-            setTimeout(() => { btn.innerText = "💾 OVERWRITE & SAVE CONFIG"; btn.style.background = "#222"; }, 2000);
-            if(soundEnabled) playBeep(1200, 0.1);
-        } else { alert("Paste both points first!"); }
+    function deleteStage(id) {
+        stages = stages.filter(s => s.id !== id);
+        localStorage.setItem('rally_stages', JSON.stringify(stages));
+        renderStages();
     }
 
-    async function toggleCamera() { if (videoStream) { stopCamera(); } else { await startCamera(); } }
-
-    async function startCamera() {
-        try {
-            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 720 }, audio: false });
-            document.getElementById('video-preview').srcObject = videoStream;
-            document.getElementById('camera-container').style.display = 'block';
-            document.getElementById('cam-toggle-btn').innerText = "DISABLE PHONE CAMERA";
-        } catch (e) { alert("Camera Access Denied"); }
+    function loadStage(id) {
+        activeConfig = stages.find(s => s.id === id);
+        document.getElementById('current-stage-name').innerText = "ACTIVE: " + activeConfig.name;
+        document.getElementById('current-stage-name').style.background = "var(--ready)";
+        if(soundEnabled) playBeep(1000, 0.1);
     }
 
-    function stopCamera() {
-        if (videoStream) {
-            videoStream.getTracks().forEach(t => t.stop()); videoStream = null;
-            document.getElementById('camera-container').style.display = 'none';
-            document.getElementById('cam-toggle-btn').innerText = "1. ENABLE PHONE CAMERA";
-        }
+    function renderStages() {
+        const container = document.getElementById('stage-list');
+        container.innerHTML = stages.length === 0 ? '<div style="color:#444; font-size:0.7rem;">Empty</div>' : '';
+        stages.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'stage-item';
+            div.innerHTML = `
+                <div class="stage-info"><strong>${s.name}</strong></div>
+                <div class="stage-actions">
+                    <button class="btn-sm" style="background:var(--ready)" onclick="loadStage(${s.id})">LOAD</button>
+                    <button class="btn-sm" style="background:var(--error)" onclick="deleteStage(${s.id})">DEL</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
     }
 
-    // --- LOGIC ENGINE (Directional) ---
+    // --- LOGIC & GPS (Directional) ---
     function runLogic(dS, dF, kmh) {
+        if(!activeConfig) return;
         const h = document.getElementById('status-header');
         
-        // Show distance to START if IDLE, otherwise distance to FINISH
         document.getElementById('dist-label').innerText = state === 'ACTIVE' ? Math.round(dF) : Math.round(dS);
+        document.getElementById('dist-type').innerText = state === 'ACTIVE' ? "TO FINISH (M)" : "TO START (M)";
 
-        // TRIGGER 1: Approach Start Line
-        if (state === 'IDLE' && dS < config.radius) {
+        if (state === 'IDLE' && dS < 60) {
             state = 'READY'; document.body.className = 'ready'; h.innerText = "READY AT START";
             if(!videoStream) startCamera();
             playBeep(440, 0.2);
         }
         
-        // TRIGGER 2: Launch from Start Line
-        if (state === 'READY' && dS < config.radius && kmh > config.minSpeed) {
+        if (state === 'READY' && dS < 60 && kmh > 15) {
             state = 'ACTIVE'; document.body.className = 'recording';
             h.innerText = "STAGE ACTIVE"; startRecording(); playBeep(880, 0.6);
         }
 
-        // TRIGGER 3: Cross Finish Line
-        if (state === 'ACTIVE' && dF < config.radius) {
+        if (state === 'ACTIVE' && dF < 60) {
             state = 'COOLDOWN'; h.innerText = "FINISH REACHED";
             setTimeout(() => {
                 if(mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
@@ -172,11 +190,12 @@
             }, 5000);
         }
 
-        // RESET: If you drive away from Start without crossing MinSpeed, reset to IDLE
-        if (state === 'READY' && dS > config.radius + 20) {
+        if (state === 'READY' && dS > 80) {
             state = 'IDLE'; document.body.className = ''; h.innerText = "SYSTEM IDLE";
         }
     }
+
+    // ... (Previous Camera, Video, and Audio functions remain the same) ...
 
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
@@ -184,9 +203,9 @@
             const { latitude, longitude, speed } = pos.coords;
             const kmh = Math.round((speed || 0) * 3.6);
             document.getElementById('speed').innerText = kmh;
-            if (config.start && config.finish) {
-                const dS = calcDist(latitude, longitude, config.start.lat, config.start.lon);
-                const dF = calcDist(latitude, longitude, config.finish.lat, config.finish.lon);
+            if (activeConfig) {
+                const dS = calcDist(latitude, longitude, activeConfig.start.lat, activeConfig.start.lon);
+                const dF = calcDist(latitude, longitude, activeConfig.finish.lat, activeConfig.finish.lon);
                 runLogic(dS, dF, kmh);
             }
         }, null, { enableHighAccuracy: true });
@@ -199,10 +218,22 @@
         return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
     }
 
+    async function toggleCamera() { if (videoStream) { stopCamera(); } else { await startCamera(); } }
+    async function startCamera() {
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+            document.getElementById('video-preview').srcObject = videoStream;
+            document.getElementById('camera-container').style.display = 'block';
+        } catch (e) { alert("Camera Denied"); }
+    }
+    function stopCamera() {
+        if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; document.getElementById('camera-container').style.display = 'none'; }
+    }
+
     function startRecording() {
         if (!videoStream) return;
         recordedChunks = [];
-        mediaRecorder = new MediaRecorder(videoStream, { mimeType: 'video/webm' });
+        mediaRecorder = new MediaRecorder(videoStream);
         mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = saveVideo;
         mediaRecorder.start();
@@ -211,23 +242,17 @@
     function saveVideo() {
         const blob = new Blob(recordedChunks, { type: "video/webm" });
         const url = URL.createObjectURL(blob);
-        const gallery = document.getElementById('video-gallery');
-        if(gallery.innerHTML.includes("No clips")) gallery.innerHTML = '';
         const item = document.createElement('div');
         item.className = 'video-item';
-        item.innerHTML = `<strong>RUN: ${new Date().toLocaleTimeString()}</strong><br>
-                          <video src="${url}" controls class="thumb"></video>
-                          <a href="${url}" download="rally_run.webm" style="color:var(--ready); font-size:0.7rem; display:block; margin-top:5px;">⬇️ DOWNLOAD VIDEO</a>`;
-        gallery.prepend(item);
+        item.innerHTML = `<strong>${activeConfig ? activeConfig.name : 'Run'}</strong><br><video src="${url}" controls class="thumb"></video>`;
+        document.getElementById('video-gallery').prepend(item);
     }
 
     async function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') await audioCtx.resume();
         soundEnabled = !soundEnabled;
-        const btn = document.getElementById('audio-btn');
-        btn.innerText = soundEnabled ? "🔊 AUDIO: ON" : "🔈 AUDIO: OFF";
-        btn.className = soundEnabled ? "btn-audio-on" : "btn-audio-off";
+        document.getElementById('audio-btn').className = soundEnabled ? "btn-audio-on" : "btn-audio-off";
         if(soundEnabled) playBeep(880, 0.2); 
     }
 

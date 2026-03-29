@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Rally Master v2.5 - Pro</title>
+    <title>Rally Master v2.6 - Directional</title>
     <style>
         :root {
             --bg: #0a0a0a; --card: #1a1a1a; --accent: #00e676;
@@ -45,7 +45,7 @@
         video.thumb { width: 100%; height: auto; border-radius: 4px; margin-top: 5px; }
 
         .controls { padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { border: none; border-radius: 5px; font-weight: bold; padding: 16px; color: white; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        button { border: none; border-radius: 5px; font-weight: bold; padding: 16px; color: white; cursor: pointer; text-transform: uppercase; }
         .btn-full { grid-column: span 2; }
         .btn-acc { background: var(--accent); }
         .btn-audio-off { background: #444; }
@@ -63,28 +63,26 @@
     <span id="gps-timer">SIGNAL: --s</span>
 </div>
 
-<div class="section-title">Manual Geo-Entry (Paste from Maps)</div>
+<div class="section-title">Manual Geo-Entry</div>
 <div class="coord-entry">
     <div class="coord-input-group">
-        <label>START LINE (LAT, LON)</label>
-        <input type="text" id="geo-start" placeholder="Paste Lat, Lon" oninput="parseGeo('start')">
+        <label>START LINE (PASTE FROM MAPS)</label>
+        <input type="text" id="geo-start" placeholder="Lat, Lon" oninput="parseGeo('start')">
     </div>
     <div class="coord-input-group">
-        <label>FINISH LINE (LAT, LON)</label>
-        <input type="text" id="geo-finish" placeholder="Paste Lat, Lon" oninput="parseGeo('finish')">
+        <label>FINISH LINE (PASTE FROM MAPS)</label>
+        <input type="text" id="geo-finish" placeholder="Lat, Lon" oninput="parseGeo('finish')">
     </div>
     <button id="save-btn" class="btn-full" style="background:#222; font-size:0.7rem; margin-top:5px;" onclick="saveConfig()">💾 OVERWRITE & SAVE CONFIG</button>
 </div>
 
 <div class="telemetry">
     <div class="stat-card"><span class="label">KM/H</span><span class="value" id="speed">0</span></div>
-    <div class="stat-card"><span class="label">DIST TO START (M)</span><span class="value" id="dist-label">--</span></div>
+    <div class="stat-card"><span class="label">NEXT: START (M)</span><span class="value" id="dist-label">--</span></div>
 </div>
 
 <div class="section-title">Video Gallery</div>
-<div id="video-gallery" class="gallery">
-    <div style="color:#444; text-align:center; font-size:0.8rem;">No clips saved yet</div>
-</div>
+<div id="video-gallery" class="gallery"><div style="color:#444; text-align:center; font-size:0.8rem;">No clips saved yet</div></div>
 
 <div class="controls">
     <button id="cam-toggle-btn" class="btn-full btn-acc" onclick="toggleCamera()">1. ENABLE PHONE CAMERA</button>
@@ -102,7 +100,6 @@
     let state = 'IDLE', lastGpsTime = Date.now(), soundEnabled = false, audioCtx = null;
     let videoStream = null, mediaRecorder = null, recordedChunks = [];
 
-    // Load existing config into inputs on start
     if(config.start) document.getElementById('geo-start').value = `${config.start.lat}, ${config.start.lon}`;
     if(config.finish) document.getElementById('geo-finish').value = `${config.finish.lat}, ${config.finish.lon}`;
 
@@ -110,11 +107,8 @@
         const val = document.getElementById(`geo-${type}`).value;
         const parts = val.split(',').map(p => p.trim());
         if(parts.length === 2) {
-            const lat = parseFloat(parts[0]);
-            const lon = parseFloat(parts[1]);
-            if(!isNaN(lat) && !isNaN(lon)) {
-                config[type] = { lat, lon };
-            }
+            const lat = parseFloat(parts[0]); const lon = parseFloat(parts[1]);
+            if(!isNaN(lat) && !isNaN(lon)) config[type] = { lat, lon };
         }
     }
 
@@ -122,84 +116,74 @@
         if(config.start && config.finish) {
             localStorage.setItem('r_start', JSON.stringify(config.start));
             localStorage.setItem('r_finish', JSON.stringify(config.finish));
-            
             const btn = document.getElementById('save-btn');
-            btn.innerText = "✅ COORDINATES UPDATED";
-            btn.style.background = "#00e676";
-            setTimeout(() => { 
-                btn.innerText = "💾 OVERWRITE & SAVE CONFIG"; 
-                btn.style.background = "#222";
-            }, 2000);
+            btn.innerText = "✅ CONFIG UPDATED"; btn.style.background = "#00e676";
+            setTimeout(() => { btn.innerText = "💾 OVERWRITE & SAVE CONFIG"; btn.style.background = "#222"; }, 2000);
             if(soundEnabled) playBeep(1200, 0.1);
-        } else {
-            alert("Ensure both points have valid Lat, Lon pasted!");
-        }
+        } else { alert("Paste both points first!"); }
     }
 
-    // --- CAMERA ENGINE ---
-    async function toggleCamera() {
-        if (videoStream) { stopCamera(); } else { await startCamera(); }
-    }
+    async function toggleCamera() { if (videoStream) { stopCamera(); } else { await startCamera(); } }
 
     async function startCamera() {
         try {
-            videoStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: 1280, height: 720 }, 
-                audio: false 
-            });
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 720 }, audio: false });
             document.getElementById('video-preview').srcObject = videoStream;
             document.getElementById('camera-container').style.display = 'block';
             document.getElementById('cam-toggle-btn').innerText = "DISABLE PHONE CAMERA";
-        } catch (e) { alert("Camera Access Denied or Unavailable"); }
+        } catch (e) { alert("Camera Access Denied"); }
     }
 
     function stopCamera() {
         if (videoStream) {
-            videoStream.getTracks().forEach(t => t.stop());
-            videoStream = null;
+            videoStream.getTracks().forEach(t => t.stop()); videoStream = null;
             document.getElementById('camera-container').style.display = 'none';
             document.getElementById('cam-toggle-btn').innerText = "1. ENABLE PHONE CAMERA";
         }
     }
 
-    // --- LOGIC ENGINE ---
+    // --- LOGIC ENGINE (Directional) ---
     function runLogic(dS, dF, kmh) {
         const h = document.getElementById('status-header');
-        document.getElementById('dist-label').innerText = Math.round(dS);
+        
+        // Show distance to START if IDLE, otherwise distance to FINISH
+        document.getElementById('dist-label').innerText = state === 'ACTIVE' ? Math.round(dF) : Math.round(dS);
 
+        // TRIGGER 1: Approach Start Line
         if (state === 'IDLE' && dS < config.radius) {
-            state = 'READY'; document.body.className = 'ready'; h.innerText = "READY TO START";
+            state = 'READY'; document.body.className = 'ready'; h.innerText = "READY AT START";
             if(!videoStream) startCamera();
             playBeep(440, 0.2);
         }
         
-        if (state === 'READY' && kmh > config.minSpeed) {
+        // TRIGGER 2: Launch from Start Line
+        if (state === 'READY' && dS < config.radius && kmh > config.minSpeed) {
             state = 'ACTIVE'; document.body.className = 'recording';
-            h.innerText = "STAGE ACTIVE"; 
-            startRecording(); 
-            playBeep(880, 0.6);
+            h.innerText = "STAGE ACTIVE"; startRecording(); playBeep(880, 0.6);
         }
 
+        // TRIGGER 3: Cross Finish Line
         if (state === 'ACTIVE' && dF < config.radius) {
-            state = 'COOLDOWN';
-            h.innerText = "FINISH REACHED";
+            state = 'COOLDOWN'; h.innerText = "FINISH REACHED";
             setTimeout(() => {
                 if(mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
                 state = 'IDLE'; document.body.className = ''; h.innerText = "SYSTEM IDLE";
                 playBeep(600, 1.0);
             }, 5000);
         }
+
+        // RESET: If you drive away from Start without crossing MinSpeed, reset to IDLE
+        if (state === 'READY' && dS > config.radius + 20) {
+            state = 'IDLE'; document.body.className = ''; h.innerText = "SYSTEM IDLE";
+        }
     }
 
-    // --- GPS & MATH ---
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
             lastGpsTime = Date.now();
             const { latitude, longitude, speed } = pos.coords;
             const kmh = Math.round((speed || 0) * 3.6);
             document.getElementById('speed').innerText = kmh;
-            document.getElementById('gps-acc').innerText = `GPS: ACTIVE`;
-            
             if (config.start && config.finish) {
                 const dS = calcDist(latitude, longitude, config.start.lat, config.start.lon);
                 const dF = calcDist(latitude, longitude, config.finish.lat, config.finish.lon);
@@ -215,7 +199,6 @@
         return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
     }
 
-    // --- VIDEO HANDLING ---
     function startRecording() {
         if (!videoStream) return;
         recordedChunks = [];
@@ -238,7 +221,6 @@
         gallery.prepend(item);
     }
 
-    // --- AUDIO FIX ---
     async function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -251,8 +233,7 @@
 
     function playBeep(f, d) {
         if (!soundEnabled || !audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.frequency.setValueAtTime(f, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
@@ -260,9 +241,7 @@
         osc.start(); osc.stop(audioCtx.currentTime + d);
     }
 
-    setInterval(() => { 
-        document.getElementById('gps-timer').innerText = `SIGNAL: ${((Date.now() - lastGpsTime)/1000).toFixed(1)}s`; 
-    }, 500);
+    setInterval(() => { document.getElementById('gps-timer').innerText = `SIGNAL: ${((Date.now() - lastGpsTime)/1000).toFixed(1)}s`; }, 500);
 </script>
 </body>
 </html>
